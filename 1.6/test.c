@@ -5,7 +5,9 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include "unity.h"
+#include <string.h>
 #include "my_pthread_create.h"
+#include "unity_internals.h"
 
 
 static void *worker(void *arg) {
@@ -36,6 +38,10 @@ static void *deep_recursion(void *arg) {
     volatile char buf[1024];
     buf[0] = (char)(long)arg;
     return deep_recursion((void *)((long)arg + 1));
+}
+
+static void *simple_worker(void *arg) {
+    return (void *)5;
 }
 
 void setUp(void) { }
@@ -77,6 +83,37 @@ void test_retval_not_swapped(void) {
     TEST_ASSERT_EQUAL(2, (long)r2);
 }
 
+
+void test_double_join_crashes(void) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        mythread_t t;
+        void *ret;
+        if (mythread_create(&t, simple_worker, NULL) != 0) _exit(1);
+        mythread_join(t, &ret);
+        mythread_join(t, &ret);
+        _exit(0);
+    }
+    int status = 0;
+    int timeout_ms = 1000; 
+    int waited = 0;
+    pid_t res = 0;
+
+    while (waited < timeout_ms) {
+        res = waitpid(pid, &status, WNOHANG);
+        if (res != 0) break; 
+        usleep(10000);
+        waited += 10;
+    }
+
+    if (res == 0) {
+        kill(pid, SIGKILL);    
+        waitpid(pid, &status, 0);
+        TEST_ASSERT_TRUE(1); 
+    } else {
+        TEST_FAIL_MESSAGE("Поток не завис, как ожидалось (защита не работает?)");
+    }
+}
 void test_nested_thread(void) {
     mythread_t parent;
     void *parent_ret;
@@ -102,6 +139,7 @@ void test_guard_page_sigsegv(void) {
 
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_double_join_crashes);
     RUN_TEST(test_create_and_join_multiple);
     RUN_TEST(test_create_null_thread);
     RUN_TEST(test_create_null_routine);
