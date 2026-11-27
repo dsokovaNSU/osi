@@ -31,8 +31,6 @@ static void *many_yield(void *arg) {
     return NULL;
 }
 
-
-
 void test_yield_without_threads_does_not_crash(void) {
     uthread_yield();          
     TEST_PASS();
@@ -64,7 +62,6 @@ void test_create_null_arg_is_ok(void) {
     uthread_run();
 }
 
-
 void test_three_threads_run_to_completion(void) {
     uthread_t t1, t2, t3;
     TEST_ASSERT_EQUAL_INT(0, uthread_create(&t1, worker, "A"));
@@ -84,15 +81,14 @@ void test_run_can_be_reused_after_completion(void) {
     uthread_run();
 }
 
-
 void test_create_max_threads_all_succeed(void) {
     uthread_t ts[MAX_THREADS];
     for (int i = 0; i < MAX_THREADS; i++) {
         TEST_ASSERT_EQUAL_INT(0, uthread_create(&ts[i], worker_quiet, NULL));
     }
     uthread_run();   
-
 }
+
 void test_create_over_limit_fails(void) {
     uthread_t ts[MAX_THREADS];
     for (int i = 0; i < MAX_THREADS; i++) {
@@ -115,7 +111,6 @@ void test_can_create_after_limit_and_run(void) {
     uthread_run();
 }
 
-
 void test_many_yields_inside_one_thread(void) {
     uthread_t t;
     TEST_ASSERT_EQUAL_INT(0, uthread_create(&t, many_yield, NULL));
@@ -123,6 +118,31 @@ void test_many_yields_inside_one_thread(void) {
     TEST_PASS();
 }
 
+static int spawn_count = 0;
+static void *worker_quiet_instant(void *arg) {
+    (void)arg;
+    return NULL;
+}
+
+static void *mass_spawner(void *arg) {
+    (void)arg;
+    for (int i = 0; i < MAX_THREADS + 10; i++) {
+        uthread_t child;
+        int res = uthread_create(&child, worker_quiet_instant, NULL);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(0, res, "Failed to create thread due to lack of slot reuse");
+        spawn_count++;
+        uthread_yield(); 
+    }
+    return NULL;
+}
+
+void test_reuse_slots_within_single_run(void) {
+    spawn_count = 0;
+    uthread_t t;
+    TEST_ASSERT_EQUAL_INT(0, uthread_create(&t, mass_spawner, NULL));
+    uthread_run();
+    TEST_ASSERT_EQUAL_INT(MAX_THREADS + 10, spawn_count);
+}
 
 
 int main(void) {
@@ -134,15 +154,14 @@ int main(void) {
     RUN_TEST(test_create_null_start_routine_fails);
     RUN_TEST(test_create_null_thread_pointer_fails);
     RUN_TEST(test_create_null_arg_is_ok);
-
     RUN_TEST(test_three_threads_run_to_completion);
     RUN_TEST(test_run_can_be_reused_after_completion);
-
     RUN_TEST(test_create_max_threads_all_succeed);
     RUN_TEST(test_create_over_limit_fails);
     RUN_TEST(test_can_create_after_limit_and_run);
-
     RUN_TEST(test_many_yields_inside_one_thread);
+ 
+    RUN_TEST(test_reuse_slots_within_single_run);
 
     return UNITY_END();
 }
